@@ -59,3 +59,23 @@ export interface ResendOtpSuccessData {
   message?: string;
   devOtp?: string;
 }
+
+export interface ForgotPasswordRequest {
+  email: string;
+}
+
+export interface ForgotPasswordResponseData {
+  email: string;
+  otpToken: string;
+  expiresInMinutes: number;
+  message?: string;
+  devOtp?: string;
+}
+
+export interface ResetPasswordRequest {
+  email: string;
+  otp: string;
+  otpToken: string;
+  newPassword: string;
+}
+

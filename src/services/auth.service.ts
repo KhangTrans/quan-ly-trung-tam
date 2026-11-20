@@ -9,6 +9,9 @@ import type {
   ResendOtpSuccessData,
   User,
   VerifyOtpRequest,
+  ForgotPasswordRequest,
+  ForgotPasswordResponseData,
+  ResetPasswordRequest,
 } from '../types';
 
 export const authService = {
@@ -32,13 +35,43 @@ export const authService = {
     return response.data;
   },
 
+  async forgotPassword(payload: ForgotPasswordRequest): Promise<ApiResponse<ForgotPasswordResponseData>> {
+    const response = await apiClient.post<ApiResponse<ForgotPasswordResponseData>>('/auth/forgot-password', payload);
+    return response.data;
+  },
+
+  async verifyResetOtp(payload: VerifyOtpRequest): Promise<ApiResponse<{ valid: boolean; message: string }>> {
+    const response = await apiClient.post<ApiResponse<{ valid: boolean; message: string }>>('/auth/verify-reset-otp', payload);
+    return response.data;
+  },
+
+  async resetPassword(payload: ResetPasswordRequest): Promise<ApiResponse<{ message: string }>> {
+    const response = await apiClient.post<ApiResponse<{ message: string }>>('/auth/reset-password', payload);
+    return response.data;
+  },
+
   async googleAuth(payload: { idToken?: string; credential?: string }): Promise<ApiResponse<AuthSuccessData>> {
     const response = await apiClient.post<ApiResponse<AuthSuccessData>>('/auth/google', payload);
     return response.data;
   },
 
+  async refreshToken(refreshToken: string): Promise<ApiResponse<AuthSuccessData>> {
+    const response = await apiClient.post<ApiResponse<AuthSuccessData>>('/auth/refresh-token', { refreshToken });
+    return response.data;
+  },
+
   async getMe(): Promise<ApiResponse<User>> {
     const response = await apiClient.get<ApiResponse<User>>('/auth/me');
+    return response.data;
+  },
+
+  async updateProfile(payload: { name?: string; phone?: string; avatar?: string }): Promise<ApiResponse<User>> {
+    const response = await apiClient.put<ApiResponse<User>>('/auth/me', payload);
+    return response.data;
+  },
+
+  async changePassword(payload: { currentPassword: string; newPassword: string }): Promise<ApiResponse<{ message: string }>> {
+    const response = await apiClient.put<ApiResponse<{ message: string }>>('/auth/change-password', payload);
     return response.data;
   },
 

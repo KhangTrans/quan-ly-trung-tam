@@ -49,3 +49,39 @@
 .animate-petal {
   animation: petalFall 8s ease-in-out infinite;
 }
+
+/* Căn giữa toàn bộ tên cột (Header) của tất cả bảng trong mọi module */
+.ant-table-thead > tr > th,
+.ant-table-thead > tr > td {
+  text-align: center !important;
+  white-space: nowrap !important;
+}
+
+.ant-table-thead > tr > th .ant-table-column-title {
+  text-align: center;
+  justify-content: center;
+  white-space: nowrap !important;
+}
+
+/* Không để các ô dữ liệu trong bảng bị xuống dòng hoặc co rúm */
+.ant-table-tbody > tr > td {
+  white-space: nowrap;
+}
+
+/* Căn giữa toàn bộ thanh phân trang & tổng số bản ghi của bảng trong tất cả module */
+.ant-table-pagination.ant-pagination,
+.ant-pagination {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  width: 100% !important;
+  float: none !important;
+  text-align: center !important;
+  margin: 18px 0 !important;
+}
+
+.ant-pagination-total-text {
+  font-weight: 500;
+  color: #64748b;
+  margin-right: 14px;
+}

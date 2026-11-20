@@ -43,30 +43,62 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Sync / verify token khi ứng dụng khởi động
+  // Sync / verify token khi ứng dụng khởi động (tự động kích hoạt refresh token nếu access token hết hạn)
   useEffect(() => {
     const initAuth = async () => {
       const storedToken = localStorage.getItem('token');
-      if (storedToken) {
+      const storedRefreshToken = localStorage.getItem('refreshToken');
+
+      if (storedToken || storedRefreshToken) {
         try {
           const res = await authService.getMe();
           if (res.data) {
             setUser(res.data);
             localStorage.setItem('user', JSON.stringify(res.data));
+            const activeToken = localStorage.getItem('token');
+            if (activeToken) {
+              setToken(activeToken);
+            }
           }
         } catch {
-          // Token không còn hợp lệ
+          // Token và Refresh token đều không còn hợp lệ
           localStorage.removeItem('token');
           localStorage.removeItem('refreshToken');
           localStorage.removeItem('user');
           setToken(null);
           setUser(null);
         }
+      } else {
+        setToken(null);
+        setUser(null);
       }
       setIsLoading(false);
     };
 
     initAuth();
+  }, []);
+
+  // Lắng nghe các sự kiện token được làm mới hoặc phiên làm việc hết hạn từ API Interceptor
+  useEffect(() => {
+    const handleTokenRefreshed = (e: Event) => {
+      const customEvent = e as CustomEvent<{ token: string; refreshToken?: string }>;
+      if (customEvent.detail?.token) {
+        setToken(customEvent.detail.token);
+      }
+    };
+
+    const handleSessionExpired = () => {
+      setToken(null);
+      setUser(null);
+    };
+
+    window.addEventListener('auth:token-refreshed', handleTokenRefreshed);
+    window.addEventListener('auth:session-expired', handleSessionExpired);
+
+    return () => {
+      window.removeEventListener('auth:token-refreshed', handleTokenRefreshed);
+      window.removeEventListener('auth:session-expired', handleSessionExpired);
+    };
   }, []);
 
   const saveAuthSession = (authData: AuthSuccessData) => {
@@ -113,9 +145,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
-    await authService.logout();
-    setToken(null);
-    setUser(null);
+    try {
+      await authService.logout();
+    } finally {
+      localStorage.removeItem('token');
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('user');
+      setToken(null);
+      setUser(null);
+    }
   };
 
   const updateUser = (updatedUser: User) => {

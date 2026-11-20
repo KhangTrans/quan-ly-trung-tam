@@ -1,7 +1,8 @@
 import React from 'react';
 import { Outlet, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogOut } from 'lucide-react';
+import { Dropdown, Avatar } from 'antd';
+import { UserOutlined, LogoutOutlined } from '@ant-design/icons';
 
 export const MainLayout: React.FC = () => {
   const { user, isAuthenticated, logout } = useAuth();
@@ -11,6 +12,25 @@ export const MainLayout: React.FC = () => {
     await logout();
     navigate('/login');
   };
+
+  const userMenuItems = [
+    {
+      key: 'profile',
+      icon: <UserOutlined className="text-rose-600" />,
+      label: <span className="font-semibold text-xs">Hồ sơ cá nhân</span>,
+      onClick: () => navigate('/profile'),
+    },
+    {
+      type: 'divider' as const,
+    },
+    {
+      key: 'logout',
+      icon: <LogoutOutlined />,
+      label: <span className="font-semibold text-xs">Đăng xuất</span>,
+      danger: true,
+      onClick: handleLogout,
+    },
+  ];
 
   const getRoleLabel = (role?: string) => {
     switch (role) {
@@ -51,27 +71,23 @@ export const MainLayout: React.FC = () => {
             </Link>
 
             {isAuthenticated && user ? (
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-rose-50 border border-rose-200">
-                  <div className="w-6 h-6 rounded-full bg-rose-500 text-white flex items-center justify-center text-xs font-bold">
+              <Dropdown menu={{ items: userMenuItems }} trigger={['click']} placement="bottomRight">
+                <div className="flex items-center gap-2.5 px-3 py-1 rounded-full bg-rose-50 border border-rose-200 cursor-pointer hover:bg-rose-100/80 hover:border-rose-300 transition-all select-none">
+                  <Avatar
+                    size={28}
+                    style={{ backgroundColor: '#e11d48', flexShrink: 0 }}
+                    src={user.avatar}
+                  >
                     {user.name.charAt(0).toUpperCase()}
-                  </div>
-                  <span className="text-xs font-semibold text-slate-800 hidden sm:inline">
+                  </Avatar>
+                  <span className="text-xs font-bold text-slate-800 hidden sm:inline max-w-[120px] truncate">
                     {user.name}
                   </span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-200/80 text-rose-800 font-medium">
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-200/80 text-rose-800 font-semibold uppercase tracking-wider">
                     {getRoleLabel(user.role)}
                   </span>
                 </div>
-                <button
-                  onClick={handleLogout}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-xl text-slate-600 hover:text-rose-700 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition-all cursor-pointer"
-                  title="Đăng xuất"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Đăng xuất</span>
-                </button>
-              </div>
+              </Dropdown>
             ) : (
               <div className="flex items-center gap-2 sm:gap-3">
                 <Link
@@ -103,7 +119,9 @@ export const MainLayout: React.FC = () => {
             <span className="font-semibold text-slate-700">Minh Tú Nihongo Center</span>
             <span>— Đào tạo tiếng Nhật chuẩn học thuật & JLPT</span>
           </div>
-          <div>© {new Date().getFullYear()} Minh Tu Center. All rights reserved.</div>
+          <div>
+            <span>© {new Date().getFullYear()} Minh Tu Center. All rights reserved.</span>
+          </div>
         </div>
       </footer>
     </div>

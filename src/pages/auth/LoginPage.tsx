@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle, CheckCircle2, Sparkles, Loader2 } from 'lucide-react';
 import { AuthLayout } from '../../components/auth/AuthLayout';
 import { OtpModal } from '../../components/auth/OtpModal';
+import { ForgotPasswordModal } from '../../components/auth/ForgotPasswordModal';
 import { useAuth } from '../../context/AuthContext';
 
 export const LoginPage: React.FC = () => {
@@ -23,6 +24,7 @@ export const LoginPage: React.FC = () => {
 
   // State phục vụ trường hợp tài khoản chưa xác thực OTP (Backend trả về 403 + otpToken)
   const [showOtpModal, setShowOtpModal] = useState(false);
+  const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
   const [unverifiedOtpData, setUnverifiedOtpData] = useState<{
     otpToken: string;
     expiresInMinutes: number;
@@ -149,9 +151,10 @@ export const LoginPage: React.FC = () => {
         <div>
           <label
             htmlFor="login-email"
-            className="block text-xs font-semibold text-slate-700 mb-1.5"
+            className="text-xs font-semibold text-slate-700 mb-1.5 flex items-center gap-1.5"
           >
-            Địa chỉ Email <span className="text-rose-500">*</span>
+            <Mail className="w-3.5 h-3.5 text-rose-500" />
+            <span>Địa chỉ Email <span className="text-rose-500">*</span></span>
           </label>
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -185,20 +188,13 @@ export const LoginPage: React.FC = () => {
 
         {/* Password Field */}
         <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <label
-              htmlFor="login-password"
-              className="text-xs font-semibold text-slate-700"
-            >
-              Mật khẩu <span className="text-rose-500">*</span>
-            </label>
-            <Link
-              to="/forgot-password"
-              className="text-xs font-medium text-rose-600 hover:text-rose-700 hover:underline"
-            >
-              Quên mật khẩu?
-            </Link>
-          </div>
+          <label
+            htmlFor="login-password"
+            className="text-xs font-semibold text-slate-700 flex items-center gap-1.5 mb-1.5"
+          >
+            <Lock className="w-3.5 h-3.5 text-rose-500" />
+            <span>Mật khẩu <span className="text-rose-500">*</span></span>
+          </label>
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
               <Lock className="w-4 h-4" />
@@ -237,7 +233,7 @@ export const LoginPage: React.FC = () => {
           )}
         </div>
 
-        {/* Remember me Checkbox */}
+        {/* Remember me Checkbox & Forgot Password aligned right */}
         <div className="flex items-center justify-between pt-1">
           <label className="flex items-center gap-2 cursor-pointer select-none">
             <input
@@ -248,6 +244,14 @@ export const LoginPage: React.FC = () => {
             />
             <span className="text-xs text-slate-600 font-medium">Ghi nhớ đăng nhập</span>
           </label>
+
+          <button
+            type="button"
+            onClick={() => setShowForgotPasswordModal(true)}
+            className="text-xs font-semibold text-rose-600 hover:text-rose-700 hover:underline border-none bg-transparent cursor-pointer p-0 text-right"
+          >
+            Quên mật khẩu?
+          </button>
         </div>
 
         {/* Submit CTA */}
@@ -371,6 +375,16 @@ export const LoginPage: React.FC = () => {
           }}
         />
       )}
+      {/* Modal Quên mật khẩu xác thực OTP qua email */}
+      <ForgotPasswordModal
+        isOpen={showForgotPasswordModal}
+        onClose={() => setShowForgotPasswordModal(false)}
+        defaultEmail={email}
+        onSuccess={(recoveredEmail) => {
+          setEmail(recoveredEmail);
+          setFormSuccess('Đặt lại mật khẩu thành công! Vui lòng đăng nhập với mật khẩu mới.');
+        }}
+      />
     </AuthLayout>
   );
 };
