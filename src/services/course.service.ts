@@ -19,6 +19,7 @@ export interface Course {
   level: JapaneseLevel;
   description?: string;
   textbook: string;
+  textbookId?: any;
   totalSessions: number;
   tuitionFee: number;
   duration?: string;
@@ -38,6 +39,7 @@ export interface CreateCourseInput {
   level: string;
   description?: string;
   textbook: string;
+  textbookId?: any;
   totalSessions: number;
   tuitionFee: number;
   duration?: string;
