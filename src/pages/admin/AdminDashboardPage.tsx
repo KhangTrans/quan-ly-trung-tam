@@ -26,6 +26,7 @@ import {
   BellOutlined,
   EnvironmentOutlined,
   HistoryOutlined,
+  ReadOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../context/AuthContext';
 import { BranchManagementView } from '../../components/admin/BranchManagementView';
@@ -33,6 +34,7 @@ import { AuditLogView } from '../../components/admin/AuditLogView';
 import { ClassManagementView } from '../../components/admin/class/ClassManagementView';
 import { StudentManagementView } from '../../components/admin/StudentManagementView';
 import { InvoiceManagementView } from '../../components/admin/InvoiceManagementView';
+import { CourseManagementView } from '../../components/admin/course/CourseManagementView';
 
 const { Header, Sider, Content } = Layout;
 const { Title, Text } = Typography;
@@ -204,6 +206,11 @@ export const AdminDashboardPage: React.FC = () => {
               label: 'Cơ sở, Phòng & Ca học',
             },
             {
+              key: 'courses',
+              icon: <ReadOutlined className="text-rose-600" />,
+              label: 'Khóa học & Giáo trình',
+            },
+            {
               key: 'classes',
               icon: <BookOutlined />,
               label: 'Quản lý Lớp học',
@@ -245,6 +252,8 @@ export const AdminDashboardPage: React.FC = () => {
           <Title level={4} style={{ margin: 0, color: '#0f172a', fontWeight: 800 }}>
             {selectedMenuKey === 'branches'
               ? 'Thiết Lập Cơ Sở, Phòng Học & Ca Học'
+              : selectedMenuKey === 'courses'
+              ? 'Quản Lý Chương Trình & Khóa Học'
               : selectedMenuKey === 'classes'
               ? 'Quản Lý Lớp Học & Tiến Độ Đào Tạo'
               : selectedMenuKey === 'students'
@@ -287,6 +296,8 @@ export const AdminDashboardPage: React.FC = () => {
         <Content className="p-6 overflow-y-auto">
           {selectedMenuKey === 'branches' ? (
             <BranchManagementView />
+          ) : selectedMenuKey === 'courses' ? (
+            <CourseManagementView />
           ) : selectedMenuKey === 'classes' ? (
             <ClassManagementView />
           ) : selectedMenuKey === 'students' ? (
