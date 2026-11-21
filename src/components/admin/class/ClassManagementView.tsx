@@ -61,6 +61,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
 
 export const ClassManagementView: React.FC = () => {
   const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [allScheduleClasses, setAllScheduleClasses] = useState<ClassItem[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [classrooms, setClassrooms] = useState<Classroom[]>([]);
@@ -84,26 +85,237 @@ export const ClassManagementView: React.FC = () => {
   const [detailClass, setDetailClass] = useState<ClassItem | null>(null);
   const [loadingDetail, setLoadingDetail] = useState<boolean>(false);
 
-  // Filter classrooms by branch selected in Form
-  const selectedFormBranchId = Form.useWatch('branchId', form);
-  const filteredClassroomsForForm = useMemo(() => {
-    if (!selectedFormBranchId) return classrooms;
-    return classrooms.filter((r) => {
-      const bId = typeof r.branchId === 'object' ? (r.branchId as any)._id : r.branchId;
-      return bId === selectedFormBranchId;
+  // Watch Form Fields for Dynamic Real-Time Availability
+  const formBranchId = Form.useWatch('branchId', form);
+  const formShiftSlotId = Form.useWatch('shiftSlotId', form);
+  const formDaysOfWeek = Form.useWatch('daysOfWeek', form);
+  const formStartDate = Form.useWatch('startDate', form);
+  const formEndDate = Form.useWatch('endDateExpected', form);
+
+  // Helper: Format days brief [2, 4, 6] -> T2-4-6
+  const formatDaysBrief = (days: number[] = []) => {
+    if (!days || days.length === 0) return '';
+    return [...days].sort((a, b) => a - b).map((d) => (d === 8 ? 'CN' : `T${d}`)).join('-');
+  };
+
+  const isScheduleChosen = Boolean(
+    formShiftSlotId &&
+    Array.isArray(formDaysOfWeek) &&
+    formDaysOfWeek.length > 0 &&
+    formStartDate
+  );
+
+  // Compute room availability dynamically based on selected schedule
+  const classroomOptions = useMemo(() => {
+    const branchRooms = !formBranchId
+      ? classrooms
+      : classrooms.filter((r) => {
+          const bId = typeof r.branchId === 'object' ? (r.branchId as any)._id : r.branchId;
+          return bId === formBranchId;
+        });
+
+    if (!isScheduleChosen) {
+      return branchRooms.map((r) => ({
+        value: r._id,
+        label: `Phòng ${r.roomCode} (Sức chứa: ${r.capacity} chỗ)`,
+        disabled: false,
+        isConflict: false,
+      }));
+    }
+
+    const newStart = dayjs(formStartDate).valueOf();
+    const newEnd = formEndDate
+      ? dayjs(formEndDate).valueOf()
+      : newStart + 180 * 24 * 60 * 60 * 1000;
+    const newDays = (formDaysOfWeek || []).map(Number);
+
+    return branchRooms.map((room) => {
+      let conflictClass: ClassItem | null = null;
+      let commonDays: number[] = [];
+
+      for (const cls of allScheduleClasses) {
+        if (editingClass && cls._id === editingClass._id) continue;
+        if (cls.status !== 'upcoming' && cls.status !== 'ongoing') continue;
+
+        const clsRoomId =
+          typeof cls.defaultClassroomId === 'object'
+            ? cls.defaultClassroomId?._id
+            : cls.defaultClassroomId;
+        if (clsRoomId !== room._id) continue;
+
+        const clsShiftId =
+          typeof cls.shiftSlotId === 'object' ? cls.shiftSlotId?._id : cls.shiftSlotId;
+        if (clsShiftId !== formShiftSlotId) continue;
+
+        const clsDays = (cls.daysOfWeek || []).map(Number);
+        const intersect = newDays.filter((d: number) => clsDays.includes(d));
+        if (intersect.length === 0) continue;
+
+        const clsStart = dayjs(cls.startDate).valueOf();
+        const clsEnd = cls.endDateExpected
+          ? dayjs(cls.endDateExpected).valueOf()
+          : clsStart + 180 * 24 * 60 * 60 * 1000;
+
+        if (newStart <= clsEnd && newEnd >= clsStart) {
+          conflictClass = cls;
+          commonDays = intersect;
+          break;
+        }
+      }
+
+      if (conflictClass) {
+        const daysStr = formatDaysBrief(commonDays);
+        const shiftName =
+          typeof conflictClass.shiftSlotId === 'object' && conflictClass.shiftSlotId?.name
+            ? conflictClass.shiftSlotId.name
+            : '';
+        const conflictLabel = shiftName
+          ? `Phòng ${room.roomCode} (Trùng lịch: ${conflictClass.name} - ${daysStr}, ${shiftName})`
+          : `Phòng ${room.roomCode} (Trùng lịch: ${conflictClass.name} - ${daysStr})`;
+
+        return {
+          value: room._id,
+          label: conflictLabel,
+          disabled: true,
+          isConflict: true,
+        };
+      }
+
+      return {
+        value: room._id,
+        label: `Phòng ${room.roomCode} (Trống - Sức chứa: ${room.capacity} chỗ)`,
+        disabled: false,
+        isConflict: false,
+      };
     });
-  }, [classrooms, selectedFormBranchId]);
+  }, [
+    classrooms,
+    allScheduleClasses,
+    formBranchId,
+    formShiftSlotId,
+    formDaysOfWeek,
+    formStartDate,
+    formEndDate,
+    isScheduleChosen,
+    editingClass,
+  ]);
+
+  // Compute teacher availability dynamically based on selected schedule
+  const teacherOptions = useMemo(() => {
+    if (!isScheduleChosen) {
+      return teachers.map((t) => ({
+        value: t._id,
+        label: `${t.name} (${t.role === 'teacher' ? 'Giáo viên' : 'Quản lý'})`,
+        disabled: false,
+        isConflict: false,
+      }));
+    }
+
+    const newStart = dayjs(formStartDate).valueOf();
+    const newEnd = formEndDate
+      ? dayjs(formEndDate).valueOf()
+      : newStart + 180 * 24 * 60 * 60 * 1000;
+    const newDays = (formDaysOfWeek || []).map(Number);
+
+    return teachers.map((teacher) => {
+      let conflictClass: ClassItem | null = null;
+      let commonDays: number[] = [];
+
+      for (const cls of allScheduleClasses) {
+        if (editingClass && cls._id === editingClass._id) continue;
+        if (cls.status !== 'upcoming' && cls.status !== 'ongoing') continue;
+
+        const clsTeacherId =
+          typeof cls.primaryTeacherId === 'object'
+            ? cls.primaryTeacherId?._id
+            : cls.primaryTeacherId;
+        if (clsTeacherId !== teacher._id) continue;
+
+        const clsShiftId =
+          typeof cls.shiftSlotId === 'object' ? cls.shiftSlotId?._id : cls.shiftSlotId;
+        if (clsShiftId !== formShiftSlotId) continue;
+
+        const clsDays = (cls.daysOfWeek || []).map(Number);
+        const intersect = newDays.filter((d: number) => clsDays.includes(d));
+        if (intersect.length === 0) continue;
+
+        const clsStart = dayjs(cls.startDate).valueOf();
+        const clsEnd = cls.endDateExpected
+          ? dayjs(cls.endDateExpected).valueOf()
+          : clsStart + 180 * 24 * 60 * 60 * 1000;
+
+        if (newStart <= clsEnd && newEnd >= clsStart) {
+          conflictClass = cls;
+          commonDays = intersect;
+          break;
+        }
+      }
+
+      if (conflictClass) {
+        const daysStr = formatDaysBrief(commonDays);
+        return {
+          value: teacher._id,
+          label: `${teacher.name} (Trùng lịch: ${conflictClass.name} - ${daysStr})`,
+          disabled: true,
+          isConflict: true,
+        };
+      }
+
+      return {
+        value: teacher._id,
+        label: `${teacher.name} (Sẵn sàng - ${teacher.role === 'teacher' ? 'Giáo viên' : 'Quản lý'})`,
+        disabled: false,
+        isConflict: false,
+      };
+    });
+  }, [
+    teachers,
+    allScheduleClasses,
+    formShiftSlotId,
+    formDaysOfWeek,
+    formStartDate,
+    formEndDate,
+    isScheduleChosen,
+    editingClass,
+  ]);
+
+  // Available room counts for quick hint
+  const availableRoomCount = useMemo(() => classroomOptions.filter((r) => !r.disabled).length, [classroomOptions]);
+  const conflictRoomCount = useMemo(() => classroomOptions.filter((r) => r.disabled).length, [classroomOptions]);
+
+  // Auto clear selected room/teacher if newly chosen schedule conflicts with them
+  useEffect(() => {
+    if (!isModalOpen) return;
+    const currentRoomId = form.getFieldValue('defaultClassroomId');
+    if (currentRoomId) {
+      const selectedRoom = classroomOptions.find((opt) => opt.value === currentRoomId);
+      if (selectedRoom?.disabled) {
+        form.setFieldValue('defaultClassroomId', undefined);
+        message.warning(`Phòng học đã chọn bị trùng với lịch học mới, vui lòng chọn lại phòng trống!`);
+      }
+    }
+
+    const currentTeacherId = form.getFieldValue('primaryTeacherId');
+    if (currentTeacherId) {
+      const selectedTeacher = teacherOptions.find((opt) => opt.value === currentTeacherId);
+      if (selectedTeacher?.disabled) {
+        form.setFieldValue('primaryTeacherId', undefined);
+        message.warning(`Giảng viên đã chọn bị trùng với lịch học mới, vui lòng chọn lại giảng viên!`);
+      }
+    }
+  }, [classroomOptions, teacherOptions, form, isModalOpen]);
 
   // Fetch initial data
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [classRes, branchRes, roomRes, shiftRes, courseRes, teacherRes] = await Promise.all([
+      const [classRes, allScheduleRes, branchRes, roomRes, shiftRes, courseRes, teacherRes] = await Promise.all([
         classService.getAllClasses({
           search: searchText || undefined,
           branchId: selectedBranchId !== 'all' ? selectedBranchId : undefined,
           status: statusFilter !== 'all' ? statusFilter : undefined,
         }),
+        classService.getAllClasses(),
         branchService.getAllBranches(),
         classroomService.getAllClassrooms(),
         shiftSlotService.getAllShiftSlots(),
@@ -112,6 +324,7 @@ export const ClassManagementView: React.FC = () => {
       ]);
 
       if (classRes.success) setClasses(Array.isArray(classRes.data) ? classRes.data : []);
+      if (allScheduleRes.success) setAllScheduleClasses(Array.isArray(allScheduleRes.data) ? allScheduleRes.data : []);
       if (branchRes.success) setBranches(Array.isArray(branchRes.data) ? branchRes.data : []);
       if (roomRes.success) setClassrooms(Array.isArray(roomRes.data) ? roomRes.data : []);
       if (shiftRes.success) setShiftSlots(Array.isArray(shiftRes.data) ? shiftRes.data : []);
@@ -658,148 +871,223 @@ export const ClassManagementView: React.FC = () => {
         open={isModalOpen}
         onCancel={() => setIsModalOpen(false)}
         footer={null}
-        width={720}
+        width={760}
         destroyOnClose
         centered
       >
-        <Form form={form} layout="vertical" onFinish={handleSubmit} className="pt-4">
-          <Row gutter={16}>
-            <Col xs={24} sm={16}>
-              <Form.Item
-                label={<span className="font-semibold text-slate-700">Tên Lớp Học <span className="text-red-500 font-bold">*</span></span>}
-                name="name"
-                rules={[{ required: true, message: 'Vui lòng nhập tên lớp học!' }]}
-              >
-                <Input placeholder="Ví dụ: Lớp N5 Khóa 2601 (Tối 2-4-6)" className="rounded-xl h-10" />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={8}>
-              <Form.Item
-                label={<span className="font-semibold text-slate-700">Mã Lớp Học <span className="text-red-500 font-bold">*</span></span>}
-                name="classCode"
-                rules={[{ required: true, message: 'Vui lòng nhập mã lớp!' }]}
-              >
-                <Input placeholder="VD: JP-N5-K45" className="rounded-xl h-10 uppercase font-mono" />
-              </Form.Item>
-            </Col>
-          </Row>
+        <Form form={form} layout="vertical" onFinish={handleSubmit} className="pt-3 space-y-4">
+          {/* KHỐI 1: THÔNG TIN LỚP HỌC & CƠ SỞ */}
+          <div className="bg-slate-50/80 p-3.5 rounded-2xl border border-slate-100 space-y-3">
+            <div className="text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5">
+              <BookOutlined className="text-rose-500" />
+              <span>1. Thông Tin Khóa Học & Cơ Sở Đào Tạo</span>
+            </div>
 
-          <Row gutter={16}>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                label={<span className="font-semibold text-slate-700">Chương Trình Khóa Học <span className="text-red-500 font-bold">*</span></span>}
-                name="courseId"
-                rules={[{ required: true, message: 'Vui lòng chọn khóa học!' }]}
-              >
-                <Select
-                  placeholder="Chọn khóa học đào tạo"
-                  className="rounded-xl h-10"
-                  options={courses.map((c) => ({
-                    value: c._id,
-                    label: `${c.title} (${c.level})`,
-                  }))}
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                label={<span className="font-semibold text-slate-700">Giáo Viên Phụ Trách <span className="text-red-500 font-bold">*</span></span>}
-                name="primaryTeacherId"
-                rules={[{ required: true, message: 'Vui lòng chọn giảng viên!' }]}
-              >
-                <Select
-                  placeholder="Chọn giáo viên đứng lớp"
-                  className="rounded-xl h-10"
-                  options={teachers.map((t) => ({
-                    value: t._id,
-                    label: `${t.name} (${t.role === 'teacher' ? 'Giáo viên' : 'Quản lý'})`,
-                  }))}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
+            <Row gutter={14}>
+              <Col xs={24} sm={16}>
+                <Form.Item
+                  label={<span className="font-semibold text-slate-700">Tên Lớp Học <span className="text-red-500 font-bold">*</span></span>}
+                  name="name"
+                  rules={[{ required: true, message: 'Vui lòng nhập tên lớp học!' }]}
+                >
+                  <Input placeholder="Ví dụ: Lớp N5 Khóa 2601 (Tối 2-4-6)" className="rounded-xl h-10" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={8}>
+                <Form.Item
+                  label={<span className="font-semibold text-slate-700">Mã Lớp Học <span className="text-red-500 font-bold">*</span></span>}
+                  name="classCode"
+                  rules={[{ required: true, message: 'Vui lòng nhập mã lớp!' }]}
+                >
+                  <Input placeholder="VD: JP-N5-K45" className="rounded-xl h-10 uppercase font-mono" />
+                </Form.Item>
+              </Col>
+            </Row>
 
-          <Row gutter={16}>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                label={<span className="font-semibold text-slate-700">Cơ Sở / Chi Nhánh <span className="text-red-500 font-bold">*</span></span>}
-                name="branchId"
-                rules={[{ required: true, message: 'Vui lòng chọn cơ sở đào tạo!' }]}
-              >
-                <Select
-                  placeholder="Chọn cơ sở"
-                  className="rounded-xl h-10"
-                  options={branches.map((b) => ({
-                    value: b._id,
-                    label: b.name,
-                  }))}
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                label={<span className="font-semibold text-slate-700">Phòng Học Mặc Định <span className="text-red-500 font-bold">*</span></span>}
-                name="defaultClassroomId"
-                rules={[{ required: true, message: 'Vui lòng chọn phòng học!' }]}
-              >
-                <Select
-                  placeholder="Chọn phòng học"
-                  className="rounded-xl h-10"
-                  options={filteredClassroomsForForm.map((r) => ({
-                    value: r._id,
-                    label: `Phòng ${r.roomCode} (Sức chứa: ${r.capacity} học viên)`,
-                  }))}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
+            <Row gutter={14}>
+              <Col xs={24} sm={12}>
+                <Form.Item
+                  label={<span className="font-semibold text-slate-700">Chương Trình Khóa Học <span className="text-red-500 font-bold">*</span></span>}
+                  name="courseId"
+                  rules={[{ required: true, message: 'Vui lòng chọn khóa học!' }]}
+                >
+                  <Select
+                    placeholder="Chọn khóa học đào tạo"
+                    className="rounded-xl h-10"
+                    options={courses.map((c) => ({
+                      value: c._id,
+                      label: `${c.title} (${c.level})`,
+                    }))}
+                  />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={12}>
+                <Form.Item
+                  label={<span className="font-semibold text-slate-700">Cơ Sở / Chi Nhánh <span className="text-red-500 font-bold">*</span></span>}
+                  name="branchId"
+                  rules={[{ required: true, message: 'Vui lòng chọn cơ sở đào tạo!' }]}
+                >
+                  <Select
+                    placeholder="Chọn cơ sở đào tạo"
+                    className="rounded-xl h-10"
+                    options={branches.map((b) => ({
+                      value: b._id,
+                      label: b.name,
+                    }))}
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+          </div>
 
-          <Row gutter={16}>
-            <Col xs={24} sm={14}>
-              <Form.Item
-                label={<span className="font-semibold text-slate-700">Các Ngày Học Trong Tuần <span className="text-red-500 font-bold">*</span></span>}
-                name="daysOfWeek"
-                rules={[{ required: true, message: 'Vui lòng chọn ít nhất 1 ngày học!' }]}
-              >
-                <Checkbox.Group options={DAYS_OF_WEEK_OPTIONS} className="flex flex-wrap gap-2 pt-1" />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={10}>
-              <Form.Item
-                label={<span className="font-semibold text-slate-700">Khung Ca Học Chuẩn <span className="text-red-500 font-bold">*</span></span>}
-                name="shiftSlotId"
-                rules={[{ required: true, message: 'Vui lòng chọn ca học!' }]}
-              >
-                <Select
-                  placeholder="Chọn ca học"
-                  className="rounded-xl h-10"
-                  options={shiftSlots.map((s) => ({
-                    value: s._id,
-                    label: formatShiftName(s),
-                  }))}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
+          {/* KHỐI 2: ĐẢO LÊN TRƯỚC - BƯỚC 1: XÁC ĐỊNH LỊCH HỌC DỰ KIẾN (NGÀY, THỨ, CA) */}
+          <div className="bg-gradient-to-br from-rose-50/70 to-pink-50/40 p-3.5 rounded-2xl border border-rose-100 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-bold text-rose-700 uppercase tracking-wider flex items-center gap-1.5">
+                <ClockCircleOutlined className="text-rose-600" />
+                <span>2. Chọn Lịch Học Trước (Thứ & Ca Học)</span>
+              </div>
+              <Tag color="rose" className="rounded-md font-semibold text-[11px] m-0 border-rose-200">
+                ⚡ Chọn trước để hệ thống lọc phòng trống
+              </Tag>
+            </div>
 
-          <Row gutter={16}>
-            <Col xs={24} sm={8}>
-              <Form.Item
-                label={<span className="font-semibold text-slate-700">Ngày Khai Giảng <span className="text-red-500 font-bold">*</span></span>}
-                name="startDate"
-                rules={[{ required: true, message: 'Chọn ngày khai giảng!' }]}
-              >
-                <DatePicker className="w-full rounded-xl h-10" format="DD/MM/YYYY" placeholder="Chọn ngày" />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={8}>
-              <Form.Item
-                label={<span className="font-semibold text-slate-700">Ngày Dự Kiến Bế Giảng</span>}
-                name="endDateExpected"
-              >
-                <DatePicker className="w-full rounded-xl h-10" format="DD/MM/YYYY" placeholder="Chọn ngày" />
-              </Form.Item>
-            </Col>
+            <Row gutter={14}>
+              <Col xs={24} sm={12}>
+                <Form.Item
+                  label={<span className="font-semibold text-slate-700">Ngày Khai Giảng <span className="text-red-500 font-bold">*</span></span>}
+                  name="startDate"
+                  rules={[{ required: true, message: 'Chọn ngày khai giảng!' }]}
+                >
+                  <DatePicker className="w-full rounded-xl h-10" format="DD/MM/YYYY" placeholder="Chọn ngày khai giảng" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={12}>
+                <Form.Item
+                  label={<span className="font-semibold text-slate-700">Ngày Dự Kiến Bế Giảng</span>}
+                  name="endDateExpected"
+                >
+                  <DatePicker className="w-full rounded-xl h-10" format="DD/MM/YYYY" placeholder="Chọn ngày dự kiến bế giảng" />
+                </Form.Item>
+              </Col>
+            </Row>
+
+            <Row gutter={14}>
+              <Col xs={24} sm={10}>
+                <Form.Item
+                  label={<span className="font-semibold text-slate-700">Khung Ca Học Chuẩn <span className="text-red-500 font-bold">*</span></span>}
+                  name="shiftSlotId"
+                  rules={[{ required: true, message: 'Vui lòng chọn ca học!' }]}
+                >
+                  <Select
+                    placeholder="Chọn ca học"
+                    className="rounded-xl h-10"
+                    options={shiftSlots.map((s) => ({
+                      value: s._id,
+                      label: formatShiftName(s),
+                    }))}
+                  />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={14}>
+                <Form.Item
+                  label={
+                    <div className="flex items-center justify-between w-full">
+                      <span className="font-semibold text-slate-700">
+                        Các Ngày Học Trong Tuần <span className="text-red-500 font-bold">*</span>
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="small"
+                          type="text"
+                          className="text-[11px] px-1.5 h-6 text-rose-600 bg-rose-50 hover:bg-rose-100 rounded font-semibold"
+                          onClick={() => form.setFieldValue('daysOfWeek', [2, 4, 6])}
+                        >
+                          T2-4-6
+                        </Button>
+                        <Button
+                          size="small"
+                          type="text"
+                          className="text-[11px] px-1.5 h-6 text-rose-600 bg-rose-50 hover:bg-rose-100 rounded font-semibold"
+                          onClick={() => form.setFieldValue('daysOfWeek', [3, 5, 7])}
+                        >
+                          T3-5-7
+                        </Button>
+                        <Button
+                          size="small"
+                          type="text"
+                          className="text-[11px] px-1.5 h-6 text-rose-600 bg-rose-50 hover:bg-rose-100 rounded font-semibold"
+                          onClick={() => form.setFieldValue('daysOfWeek', [7, 8])}
+                        >
+                          T7-CN
+                        </Button>
+                      </div>
+                    </div>
+                  }
+                  name="daysOfWeek"
+                  rules={[{ required: true, message: 'Vui lòng chọn ít nhất 1 ngày học!' }]}
+                >
+                  <Checkbox.Group options={DAYS_OF_WEEK_OPTIONS} className="flex flex-wrap gap-2 pt-1" />
+                </Form.Item>
+              </Col>
+            </Row>
+          </div>
+
+          {/* KHỐI 3: BƯỚC 2: CHỌN PHÒNG HỌC & GIẢNG VIÊN (TỰ ĐỘNG GẮN NHÃN TRỐNG / TRÙNG LỊCH) */}
+          <div className="bg-slate-50/80 p-3.5 rounded-2xl border border-slate-100 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                <ShopOutlined className="text-rose-500" />
+                <span>3. Phân Bổ Phòng Học & Giảng Viên Phụ Trách</span>
+              </div>
+              {isScheduleChosen && (
+                <span className="text-xs">
+                  <span className="text-emerald-600 font-semibold">✓ {availableRoomCount} phòng trống</span>
+                  {conflictRoomCount > 0 && <span className="text-rose-500 font-semibold ml-1.5">• {conflictRoomCount} phòng trùng lịch</span>}
+                </span>
+              )}
+            </div>
+
+            <Row gutter={14}>
+              <Col xs={24} sm={12}>
+                <Form.Item
+                  label={<span className="font-semibold text-slate-700">Phòng Học Mặc Định <span className="text-red-500 font-bold">*</span></span>}
+                  name="defaultClassroomId"
+                  rules={[{ required: true, message: 'Vui lòng chọn phòng học!' }]}
+                  extra={
+                    !formBranchId ? (
+                      <span className="text-[11px] text-slate-400">Chọn cơ sở đào tạo ở trên để xem danh sách phòng</span>
+                    ) : !isScheduleChosen ? (
+                      <span className="text-[11px] text-amber-600 font-medium">💡 Chọn lịch học (Thứ & Ca) ở trên trước để hệ thống lọc phòng trống</span>
+                    ) : null
+                  }
+                >
+                  <Select
+                    placeholder={!formBranchId ? 'Chọn cơ sở trước...' : 'Chọn phòng học'}
+                    className="rounded-xl h-10"
+                    options={classroomOptions}
+                  />
+                </Form.Item>
+              </Col>
+
+              <Col xs={24} sm={12}>
+                <Form.Item
+                  label={<span className="font-semibold text-slate-700">Giáo Viên Phụ Trách <span className="text-red-500 font-bold">*</span></span>}
+                  name="primaryTeacherId"
+                  rules={[{ required: true, message: 'Vui lòng chọn giảng viên!' }]}
+                >
+                  <Select
+                    placeholder="Chọn giáo viên đứng lớp"
+                    className="rounded-xl h-10"
+                    options={teacherOptions}
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+          </div>
+
+          {/* KHỐI 4: QUY MÔ & GHI CHÚ */}
+          <Row gutter={14}>
             <Col xs={24} sm={8}>
               <Form.Item
                 label={<span className="font-semibold text-slate-700">Sĩ Số Tối Đa <span className="text-red-500 font-bold">*</span></span>}
@@ -809,10 +1097,7 @@ export const ClassManagementView: React.FC = () => {
                 <InputNumber min={1} max={100} className="w-full rounded-xl h-10" />
               </Form.Item>
             </Col>
-          </Row>
-
-          <Row gutter={16}>
-            <Col xs={24} sm={12}>
+            <Col xs={24} sm={8}>
               <Form.Item label={<span className="font-semibold text-slate-700">Trạng Thái Lớp Học</span>} name="status">
                 <Select
                   className="rounded-xl h-10"
@@ -825,7 +1110,7 @@ export const ClassManagementView: React.FC = () => {
                 />
               </Form.Item>
             </Col>
-            <Col xs={24} sm={12}>
+            <Col xs={24} sm={8}>
               <Form.Item label={<span className="font-semibold text-slate-700">Ghi Chú Bổ Sung</span>} name="notes">
                 <Input placeholder="Ghi chú về tài liệu, dặn dò..." className="rounded-xl h-10" />
               </Form.Item>
